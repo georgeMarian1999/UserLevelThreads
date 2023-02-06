@@ -1,23 +1,15 @@
 #include "library.h"
 
-// The context we use for the main function
-ucontext_t maincontext;
 
-ult main_thread;
-ult *current_thread;
-int exit_current_thread = 0;
 struct itimerval timer;
-
-
-
 // The variable we use to swap between threads in the threads array;
-int current_thread_position = 0;
+int current_thread_id = 0;
 // The thread array;
-ult** thread_array;
+ult thread_array[102];
 
 
 void start() {
-    setitimer(ITIMER_VIRTUAL, &timer, 0);
+    setitimer(ITIMER_VIRTUAL, &timer, NULL);
 }
 
 void stop() {
@@ -27,141 +19,143 @@ void stop() {
 void print_array() {
     printf("\n [");
     for(int i = 1; i < 100; i++) {
-        printf("%d,", thread_array[i]->id);
+        printf(" Thread %d with status %d\n", thread_array[i].id, thread_array[i].status);
     }
     printf("]\n");
 }
 
 void init_array() {
-    thread_array = (ult**) malloc(100 * sizeof(ult));
     for(int i = 0; i < 100; i++) {
-        thread_array[i] = (ult*) malloc(sizeof(ult));
-        thread_array[i]->status = -1;
+        thread_array[i].id = i;
+        thread_array[i].status = -1;
+        thread_array[i].waitsFor = -2;
     }
-}
-
-ult* get_thread(int position) {
-    return thread_array[position];
-}
-int ult_equal(ult thread1, ult thread2) {
-    return thread1.id == thread2.id;
 }
 
 void scheduler() {
-    ult *previous, *next;
+    int previous_thread_id, next_thread_id;
     stop();
 
-    if (getcontext(&maincontext) == -1) {
-        printf("Error getting the context");
-        exit(EXIT_FAILURE);
-    }
-
-    previous = current_thread;
-
-    if (!exit_current_thread) {
-        current_thread->status = 0;
-        print_array();
-    }
-    else {
-        exit_current_thread = 0;
-    }
-
     // Getting the next ready to use thread
-    current_thread_position = (current_thread_position + 1) % 100;
-    while (thread_array[current_thread_position]->status != 0) {
-        current_thread_position = (current_thread_position + 1) % 100;
-    }
-    next = thread_array[current_thread_position];
-    current_thread = next;
+    next_thread_id = (current_thread_id + 1) % 100;
+    int searching = 1;
+    // We loop through all the threads to find the next one.
+    while (searching == 1) {
 
+        // If the thread is ready and not finished we continue
+        if(thread_array[next_thread_id].status == 0) {
+            // if the thread is waiting for some other thread
+            int waits_for_thread_id = thread_array[next_thread_id].waitsFor;
+            if (waits_for_thread_id != -2) {
+                // If that thread our thread is waiting for is finished we mark it
+                if (thread_array[waits_for_thread_id].status == 1) {
+                    thread_array[next_thread_id].waitsFor = -2;
+                }
+                // else we search for the next thread to give the context
+                else {
+                    next_thread_id = (next_thread_id + 1) % 100;
+                    // Go to the next step of the while loop.
+                    continue;
+                }
+            }
+            searching = 0;
+        }
+        // Else we go to the next thread
+        else {
+            next_thread_id= (next_thread_id+ 1) % 100;
+        }
+
+    }
+    previous_thread_id = current_thread_id;
+    current_thread_id = next_thread_id;
     start();
-    if (swapcontext(&(previous->ucontext), &(next->ucontext)) == -1) {
+
+    if (swapcontext(&(thread_array[previous_thread_id].ctx), &(thread_array[current_thread_id].ctx)) == -1) {
         printf("Error while swapping context\n");
     }
 }
 
-ult ult_self() {
-    return *current_thread;
+int ult_self() {
+    return current_thread_id;
 }
 
 void ult_exit() {
-    current_thread->status = 1;
-    print_array();
-    exit_current_thread = 1;
+    thread_array[current_thread_id].status = 1;
     scheduler();
 }
 
-void* function () {
-    for(int i = 0; i <= 10000; i++) {
-        printf("Thread %d printed number %d\n", current_thread->id , i);
+void f() {
+    int x = 0;
+    for(long i = 0; i < 1000000; ++i) {
+        x = x + 1;
     }
-    ult_exit();
-    return NULL;
+}
+
+void function () {
+     // for (int j = 0 ; j <= 40; j++) {
+        f();
+        for(int i = 0; i <= 1000; i++) {
+            printf("Thread %d printed number %d\n", thread_array[current_thread_id].id , i);
+        }
+    // }
 }
 
 
-int ult_create(ult *thread, void* function) {
-    thread_array[current_thread_position]->id = current_thread_position;
-
-    if (getcontext(&(thread_array[current_thread_position]->ucontext)) == -1) {
-       printf("Error while creating the thread %d\n", thread_array[current_thread_position]->id);
+int ult_create(int* created_id, void function(void*), void* arg) {
+    int new_thread_id = -1;
+    for (int i = 0; i < 100 ; i++) {
+        if (thread_array[i].status == -1) {
+            new_thread_id = i;
+            break;
+        }
+    }
+    thread_array[new_thread_id].status = 0;
+    if (getcontext(&(thread_array[new_thread_id].ctx)) == -1) {
+       printf("Error while creating the thread %d\n", thread_array[new_thread_id].id);
     }
 
     // New stack for the thread;
-    thread_array[current_thread_position]->ucontext.uc_link = &maincontext;
-    thread_array[current_thread_position]->ucontext.uc_stack.ss_sp = malloc(SIGSTKSZ);
-    thread_array[current_thread_position]->ucontext.uc_stack.ss_size = SIGSTKSZ;
+    thread_array[new_thread_id].ctx.uc_stack.ss_sp = malloc(SIGSTKSZ);
+    thread_array[new_thread_id].ctx.uc_stack.ss_size = SIGSTKSZ;
 
-    thread_array[current_thread_position]->status = 0;
+    if (getcontext(&(thread_array[new_thread_id].end_ctx)) == -1) {
+        printf("Error while creating the thread %d\n", thread_array[new_thread_id].id);
+    }
+    thread_array[new_thread_id].end_ctx.uc_stack.ss_sp = malloc(SIGSTKSZ);
+    thread_array[new_thread_id].end_ctx.uc_stack.ss_size = SIGSTKSZ;
+    makecontext(&(thread_array[new_thread_id].end_ctx), ult_exit, 0);
+    thread_array[new_thread_id].ctx.uc_link = &thread_array[new_thread_id].end_ctx;
+
     // Creating the context for the current thread;
-    makecontext(&(thread_array[current_thread_position]->ucontext), function , 2);
-    current_thread_position ++;
+    makecontext(&(thread_array[new_thread_id].ctx), (void (*)(void)) function, 1, arg);
+    *created_id = new_thread_id;
     return 0;
 }
 
 void ult_init (long period) {
-
     init_array();
     // Setting the timers for the alarm.
-    timer.it_value.tv_sec = period / 1000000;
-    timer.it_value.tv_usec = period;
-    timer.it_interval.tv_sec = period / 1000000;
-    timer.it_interval.tv_usec = period;
-    start();
+
+
+    // Init the main context;
+    if (getcontext(&(thread_array[0].ctx)) == -1) {
+        printf("Error creating the main context\n");
+    }
+    thread_array[0].status = 0;
+    current_thread_id = 0;
 
     // Setting signal handler.
     signal(SIGVTALRM, scheduler);
-
-    // Save the main context;
-    main_thread.id = -1;
-    if (getcontext(&(main_thread.ucontext)) == -1) {
-        printf("Error while getting the main context\n");
-        exit(EXIT_FAILURE);
-    }
-
-    current_thread = &main_thread;
+    timer.it_value.tv_sec = 0;
+    timer.it_value.tv_usec = 1;
+    timer.it_interval.tv_sec = 0;
+    timer.it_interval.tv_usec = 1;
+    start();
 }
 
-int ult_join(ult thread) {
-
-    // If I am the thread just return 0;
-    if (ult_equal(thread, ult_self())) {
-        return 0;
-    }
-
-    ult* crt_thread = NULL;
-
-    while (1) {
-        for (int i = 0; i < 100 ; i++) {
-            crt_thread = get_thread(i);
-            if (ult_equal(thread, *crt_thread)) {
-                if (crt_thread->status == 1) {
-                    return 1;
-                }
-            }
-        }
-        ult_yield();
-    }
+void ult_join(int thread_to_wait_for_id) {
+    thread_array[current_thread_id].waitsFor = thread_to_wait_for_id;
+    scheduler();
 }
 
 int ult_yield() {
@@ -175,15 +169,14 @@ int ult_yield() {
 
 int main(void) {
     printf("Hello, World!\n");
-
+    int threads[50];
     ult_init(10);
 
-    for(int i = 0; i < 100; i++) {
-        ult_create(thread_array[i], function());
+    for(int i = 0; i < 2; i++) {
+        ult_create(&threads[i], function, NULL);
     }
-    current_thread_position = 0;
-    for(int i = 0; i < 100; i++) {
-        ult_join(*thread_array[i]);
+    for(int i = 0; i < 2; i++) {
+        ult_join(threads[i]);
     }
 
     return 0;
