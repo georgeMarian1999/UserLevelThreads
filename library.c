@@ -49,11 +49,10 @@ void scheduler() {
     while (searching == 1) {
         // If the thread is ready and not finished we continue
         if(thread_array[next_thread_id].status == 0) {
-
             // if the thread is waiting for some other thread
             int waits_for_thread_id = thread_array[next_thread_id].waitsFor;
             if (waits_for_thread_id != -2) {
-                // printf("Thread %d is waiting for %d\n", next_thread_id, thread_array[waits_for_thread_id].status);
+
                 // If that thread our thread is waiting for is finished we mark it
                 if (thread_array[waits_for_thread_id].status == 1) {
                     thread_array[next_thread_id].waitsFor = -2;
@@ -69,8 +68,10 @@ void scheduler() {
             int mutex_wants_to_lock = thread_array[next_thread_id].wants_mutex_lock_id;
             // If the next thread to be selected wants to lock a mutex
             if (mutex_wants_to_lock != -1) {
+
                 // If the mutex we want to lock is not locked by anyone
                 if (mutex_array[mutex_wants_to_lock].locked_by == -1 ) {
+                    printf("Thread %d got lock mutex %d\n", next_thread_id, mutex_wants_to_lock);
                     // We specify that the next thread to be selected doesn't want to lock anyone because he acquired the lock
                     thread_array[next_thread_id].wants_mutex_lock_id = -1;
                     // We lock the mutex for the next thread to be selected
@@ -102,6 +103,7 @@ void scheduler() {
     }
     previous_thread_id = current_thread_id;
     current_thread_id = next_thread_id;
+
     start();
 
     if (swapcontext(&(thread_array[previous_thread_id].ctx), &(thread_array[current_thread_id].ctx)) == -1) {
@@ -126,24 +128,25 @@ void f() {
 }
 
 void function () {
-     for (int j = 0 ; j <= 15; j++) {
+     for (int j = 0 ; j <= 30; j++) {
          f();
          mutex_lock(3);
          printf("Thread %d waiting for lock %d\n", ult_self(), 3);
          int wait = 0;
-         for(int i = 0; i <= 10000; i++) {
+         for(long i = 0; i <= 1000000; i++) {
              wait++;
          }
+         f();
          printf("Thread %d unlocking %d\n", ult_self(), 3);
          mutex_unlock(3);
 
-         /*mutex_lock(7);
+         mutex_lock(7);
          printf("Thread %d waiting for lock %d\n", ult_self(), 7);
          for(int i = 0; i <= 10000; i++) {
              wait++;
          }
          printf("Thread %d unlocking %d\n", ult_self(), 7);
-         mutex_unlock(7);*/
+         mutex_unlock(7);
     }
 }
 
@@ -196,17 +199,14 @@ void ult_init (long period) {
 }
 
 void ult_join(int thread_to_wait_for_id) {
-    printf("Join thread %d is waiting for %d", current_thread_id, thread_to_wait_for_id);
     thread_array[current_thread_id].waitsFor = thread_to_wait_for_id;
     scheduler();
 }
 
 void mutex_init(int mutex_id) {
     mutex_array[mutex_id].id = mutex_id;
-    if (mutex_array[mutex_id].status == -1) {
-        mutex_array[mutex_id].status = 0;
-        mutex_array[mutex_id].locked_by = -1;
-    }
+    mutex_array[mutex_id].status = 0;
+    mutex_array[mutex_id].locked_by = -1;
 }
 
 int mutex_lock(int mutex_id) {
