@@ -198,10 +198,9 @@ void function () {
 }
 void test_barrier() {
     barrier_wait(8);
-    for (int j = 0 ; j <= 1; j++) {
+    printf("Thread %d is waiting at barrier\n", ult_self());
+    for (int j = 0 ; j <= 400; j++) {
         f();
-        printf("Thread %d is waiting at barrier\n", ult_self());
-
         int wait = 0;
         for(long i = 0; i <= 1000000; i++) {
             wait++;
