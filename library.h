@@ -21,6 +21,8 @@ typedef struct {
 
     int wants_mutex_lock_id; // -1 not wanting to lock any mutex; id of the mutex that the thread wants to lock;
     int wants_mutex_unlock_id; // -1 not wanting to unlock any mutex; id of the mutex that the thread wants to unlock;
+
+    int at_barrier; // -1 not waiting at any barrier; id of the barrier;
 } ult;
 
 
@@ -29,6 +31,11 @@ typedef struct {
     int locked_by; // -1 not locked by any thread; id of the thread that holds the lock;
     int status; // -1 - not init; 0 - created
 } mutex;
+
+typedef struct {
+    int id;
+    int capacity; // Number of threads; -1 - barrier is not created else number of threads
+} barrier;
 
 void start();
 void stop();
@@ -48,6 +55,9 @@ void ult_exit();
 void mutex_init(int mutex_id);
 int mutex_lock(int mutex_id);
 int mutex_unlock(int mutex_id);
+
+void barrier_init(int barrier_id, int capacity);
+int barrier_wait(int barrier_id);
 
 void function();
 #endif //USERLEVELTHREADS_LIBRARY_H

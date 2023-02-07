@@ -7,6 +7,7 @@ int current_thread_id = 0;
 // The thread array;
 ult thread_array[102];
 mutex mutex_array[100];
+barrier barriers[20];
 
 int mutex_id_1;
 int mutex_id_2;
@@ -35,6 +36,10 @@ void init_array() {
         thread_array[i].waitsFor = -2;
         thread_array[i].wants_mutex_lock_id = -1;
         thread_array[i].wants_mutex_unlock_id = -1;
+        thread_array[i].at_barrier = -1;
+    }
+    for(int i = 0; i < 20; i++) {
+        barriers[i].capacity = -1;
     }
 }
 
@@ -49,6 +54,8 @@ void scheduler() {
     while (searching == 1) {
         // If the thread is ready and not finished we continue
         if(thread_array[next_thread_id].status == 0) {
+
+            // Decide wait for
             // if the thread is waiting for some other thread
             int waits_for_thread_id = thread_array[next_thread_id].waitsFor;
             if (waits_for_thread_id != -2) {
@@ -65,6 +72,7 @@ void scheduler() {
                 }
             }
 
+            // Decide mutex lock
             int mutex_wants_to_lock = thread_array[next_thread_id].wants_mutex_lock_id;
             // If the next thread to be selected wants to lock a mutex
             if (mutex_wants_to_lock != -1) {
@@ -84,6 +92,8 @@ void scheduler() {
                 }
             }
 
+
+            // Decide mutex unlock
             int mutex_wants_to_unlock = thread_array[next_thread_id].wants_mutex_unlock_id;
             // If the next thread to be selected wants to unlock a mutex
             if (mutex_wants_to_unlock != -1) {
@@ -91,6 +101,43 @@ void scheduler() {
                 mutex_array[mutex_wants_to_unlock].locked_by = -1;
                 // We specify that the next thread doesn't want to unlock any mutex;
                 thread_array[next_thread_id].wants_mutex_unlock_id = -1;
+            }
+
+
+            // Decide waiting at barrier
+            int threads_at_barrier = 0;
+            // If the next thread is waiting at the barrier
+            if (thread_array[next_thread_id].at_barrier != -1) {
+                // Save the barrier id;
+                int barrier = thread_array[next_thread_id].at_barrier;
+                // Increment the number of threads waiting at the barrier
+                threads_at_barrier++;
+
+                // Verify how many are already waiting at the barrier
+                for (int i = 0; i < 100 && threads_at_barrier == barriers[barrier].capacity; i++) {
+                    if (thread_array[i].at_barrier == barrier && thread_array[i].status == 0) {
+                        threads_at_barrier++;
+                    }
+                }
+
+                // If all the threads that wait at the barrier reach the barrier capacity then break the barrier
+                if (threads_at_barrier == barriers[barrier].capacity) {
+                    int threads_breaking = 1;
+                    // We set for the next thread that he has no barrier
+                    thread_array[next_thread_id].at_barrier = -1;
+                    for (int i = 0; i < 100 && threads_breaking == barriers[barrier].capacity; i++) {
+                        if (thread_array[i].at_barrier == barrier && thread_array[i].status == 0) {
+                            threads_breaking++;
+                            thread_array[i].at_barrier = -1;
+                        }
+                    }
+                }
+                else {
+                    // If we can t break the barrier yet verify the next thread;
+                    next_thread_id = (next_thread_id + 1) % 100;
+                    continue;
+                }
+
             }
 
             searching = 0;
@@ -149,6 +196,19 @@ void function () {
          mutex_unlock(7);
     }
 }
+void test_barrier() {
+    barrier_wait(8);
+    for (int j = 0 ; j <= 1; j++) {
+        f();
+        printf("Thread %d is waiting at barrier\n", ult_self());
+
+        int wait = 0;
+        for(long i = 0; i <= 1000000; i++) {
+            wait++;
+        }
+    }
+    printf("Thread %d after the barrier is down\n", ult_self());
+}
 
 
 int ult_create(int created_id, void function(void*), void* arg) {
@@ -171,7 +231,6 @@ int ult_create(int created_id, void function(void*), void* arg) {
 
     // Creating the context for the current thread;
     makecontext(&(thread_array[created_id].ctx), (void (*)(void)) function, 1, arg);
-    // *created_id = created_id;
     return 0;
 }
 
@@ -227,8 +286,20 @@ int mutex_unlock(int mutex_id) {
     else return -1;
 }
 
+void barrier_init(int barrier_id, int capacity) {
+    barriers[barrier_id].id = barrier_id;
+    barriers[barrier_id].capacity = capacity;
+}
 
-int main(void) {
+int barrier_wait(int barrier_id) {
+    if (barriers[barrier_id].capacity != -1) {
+        thread_array[current_thread_id].at_barrier = barrier_id;
+        scheduler();
+    }
+    return 1;
+}
+
+void test_mutex() {
     int threads[50];
     for (int i = 1; i < 10; i++) {
         threads[i] = i;
@@ -245,6 +316,29 @@ int main(void) {
     for(int i = 1; i < 10; i++) {
         ult_join(threads[i]);
     }
+}
 
+void test_barriers() {
+    int threads[50];
+    for (int i = 1; i < 10; i++) {
+        threads[i] = i;
+    }
+    barrier_init(8, 6);
+    ult_init(10);
+
+    for(int i = 1; i < 10; i++) {
+        ult_create(threads[i], test_barrier, NULL);
+    }
+    for(int i = 1; i < 10; i++) {
+        ult_join(threads[i]);
+    }
+
+}
+
+
+int main(void) {
+
+    test_barriers();
+    //test_mutex();
     return 0;
 }
