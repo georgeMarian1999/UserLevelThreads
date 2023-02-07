@@ -18,7 +18,17 @@ typedef struct {
     ucontext_t end_ctx;
     int status; // -1 - not created; 0 - ready; 1 - finished;
     int waitsFor; // -2 - waits for no one; id - id of the thread that he waits for
+
+    int wants_mutex_lock_id; // -1 not wanting to lock any mutex; id of the mutex that the thread wants to lock;
+    int wants_mutex_unlock_id; // -1 not wanting to unlock any mutex; id of the mutex that the thread wants to unlock;
 } ult;
+
+
+typedef struct {
+    int id;
+    int locked_by; // -1 not locked by any thread; id of the thread that holds the lock;
+    int status; // -1 - not init; 0 - created
+} mutex;
 
 void start();
 void stop();
@@ -30,9 +40,14 @@ void scheduler();
 
 int ult_self(void);
 void ult_init(long period);
-int ult_create(int* created_id, void (*function)(void*), void* arg);
+int ult_create(int created_id, void (*function)(void*), void* arg);
 void ult_join(int thread_to_wait_for_id);
 void ult_exit();
+
+
+void mutex_init(int mutex_id);
+int mutex_lock(int mutex_id);
+int mutex_unlock(int mutex_id);
 
 void function();
 #endif //USERLEVELTHREADS_LIBRARY_H
