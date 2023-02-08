@@ -23,6 +23,11 @@ typedef struct {
     int wants_mutex_unlock_id; // -1 not wanting to unlock any mutex; id of the mutex that the thread wants to unlock;
 
     int at_barrier; // -1 not waiting at any barrier; id of the barrier;
+
+    char* buffer; // NULL if no message to write or message got.
+    int length_of_buffer; // Length of what you want to read or write
+    int wait_for_channel; // -1  not waiting for any channel;  else id of the channel;
+    int channel_wait_type; // 0 for read ; 1 for write
 } ult;
 
 
@@ -36,6 +41,13 @@ typedef struct {
     int id;
     int capacity; // Number of threads; -1 - barrier is not created else number of threads
 } barrier;
+
+
+typedef struct {
+    int id; //
+    char* buffer; // the message
+    int length; // length of the message;  if not created then is -1
+} ult_channel;
 
 void start();
 void stop();
@@ -58,6 +70,10 @@ int mutex_unlock(int mutex_id);
 
 void barrier_init(int barrier_id, int capacity);
 int barrier_wait(int barrier_id);
+
+void channel_init(int length);
+void channel_write(char* buffer, int length);
+void channel_read(int length);
 
 void function();
 #endif //USERLEVELTHREADS_LIBRARY_H
