@@ -56,11 +56,6 @@ void init_array() {
 }
 
 void deadlock_detector() {
-    stop();
-    stop_deadlock();
-
-
-
     int number_of_threads = 0;
     for (int i = 0; i < 100; i++) {
         if(thread_array[i].status == 0) {
@@ -102,8 +97,6 @@ void deadlock_detector() {
             }
         }
     }
-    start();
-    start_deadlock();
 }
 
 void scheduler() {
