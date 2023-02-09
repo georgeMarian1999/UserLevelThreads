@@ -70,21 +70,25 @@ void deadlock_detector() {
     }
 
 
-    for(int i = 0; i < 100; i++) {
-        int wants_to_lock_mutex = thread_array[i].wants_mutex_lock_id;
+
+        int wants_to_lock_mutex = thread_array[current_thread_id].wants_mutex_lock_id;
         int mutex_locked_by_thread = -1;
         for (int j = 0; j < 20 && mutex_locked_by_thread == -1; j++) {
-            if (mutex_array[j].locked_by == i) {
-                mutex_locked_by_thread = i;
+            if (mutex_array[j].locked_by == current_thread_id) {
+                mutex_locked_by_thread = mutex_array[j].id;
             }
         }
+        printf("Current thread %d has lock %d\n", current_thread_id, mutex_locked_by_thread);
         // Detect if there is a deadlock for the mutex
-        if (wants_to_lock_mutex != -1) {
+        if (wants_to_lock_mutex != -1 && mutex_locked_by_thread != -1) {
             int mutex_locked_by = mutex_array[wants_to_lock_mutex].locked_by;
             if (mutex_locked_by != -1 && thread_array[mutex_locked_by].status == 0) {
                 if(thread_array[mutex_locked_by].wants_mutex_lock_id == mutex_locked_by_thread) {
                     // Kill that thread
-                    printf("Mutex deadlock found for threads %d , %d", i, mutex_locked_by);
+                    printf("Mutex deadlock found for threads %d ,%d\n", current_thread_id, mutex_locked_by);
+                    printf("Current thread %d holding lock on %d\n", current_thread_id, mutex_locked_by_thread);
+                    printf("Current thread is %d wanting to lock mutex %d\n", current_thread_id, thread_array[current_thread_id].wants_mutex_lock_id);
+                    printf("Thread holding mutex %d is %d\n", mutex_array[wants_to_lock_mutex].id, mutex_locked_by);
                     mutex_array[wants_to_lock_mutex].locked_by = -1;
                     thread_array[mutex_locked_by].status = 1;
                     thread_array[mutex_locked_by].waitsFor = -2;
@@ -96,7 +100,6 @@ void deadlock_detector() {
                 }
             }
         }
-    }
 }
 
 void scheduler() {
@@ -142,58 +145,6 @@ void scheduler() {
                     thread_array[next_thread_id].wants_mutex_lock_id = -1;
                     // We lock the mutex for the next thread to be selected
                     mutex_array[mutex_wants_to_lock].locked_by = next_thread_id;
-
-                    // If the next thread is waiting for a channel to read or write
-                    if(thread_array[next_thread_id].wait_for_channel != -1) {
-
-                        // If the next thread wants to read from a channel
-                        if (thread_array[next_thread_id].channel_wait_type == 0) {
-                            // If the length of what was written is greater then the
-                            if (strlen(channel.buffer) > strlen(thread_array[next_thread_id].buffer)) {
-
-                                // We read the value from the channel
-                                strcpy( thread_array[next_thread_id].buffer, channel.buffer);
-
-                                // We unlock the mutex for that channel
-                                thread_array[next_thread_id].wants_mutex_unlock_id = channel.id;
-
-                                // We specify that we are no longer waiting for that channel;
-                                thread_array[next_thread_id].channel_wait_type = -1;
-                                thread_array[next_thread_id].wait_for_channel = -1;
-
-                                // We clean the channel buffer because we've read that value
-                                channel.buffer = NULL;
-                            }
-                            else {
-                                next_thread_id = (next_thread_id + 1) % 100;
-                                continue;
-                            }
-
-                        }
-
-                        // If the thread wants to write to the channel.
-                        if (thread_array[next_thread_id].channel_wait_type == 1) {
-                            if (strlen(channel.buffer) > strlen(thread_array[next_thread_id].buffer)) {
-
-                                // We read the value from the channel
-                                strcpy( thread_array[next_thread_id].buffer, channel.buffer);
-
-                                // We unlock the mutex for that channel
-                                thread_array[next_thread_id].wants_mutex_unlock_id = channel.id;
-
-                                // We specify that we are no longer waiting for that channel;
-                                thread_array[next_thread_id].channel_wait_type = -1;
-                                thread_array[next_thread_id].wait_for_channel = -1;
-
-                                // We clean the channel buffer because we've read that value
-                                channel.buffer = NULL;
-                            }
-                            else {
-                                next_thread_id = (next_thread_id + 1) % 100;
-                                continue;
-                            }
-                        }
-                    }
                 }
                 else {
                     // If the mutex we want to lock is already locked go to next thread.
@@ -212,8 +163,6 @@ void scheduler() {
                 // We specify that the next thread doesn't want to unlock any mutex;
                 thread_array[next_thread_id].wants_mutex_unlock_id = -1;
             }
-
-
 
 
             // If the next thread is waiting at the barrier
@@ -258,6 +207,38 @@ void scheduler() {
 
             }
 
+
+            // Decide channel writing and reading
+            // If the next thread is waiting for a channel to read or write
+            if(thread_array[next_thread_id].wait_for_channel != -1) {
+
+                // If the next thread wants to read from a channel
+                if (thread_array[next_thread_id].channel_wait_type == 0) {
+                    // If the length of what was written is greater then the
+                    if (strlen(channel.buffer) > strlen(thread_array[next_thread_id].buffer)) {
+
+
+                    }
+                    else {
+                        next_thread_id = (next_thread_id + 1) % 100;
+                        continue;
+                    }
+
+                }
+
+                // If the thread wants to write to the channel.
+                if (thread_array[next_thread_id].channel_wait_type == 1) {
+                    if (strlen(channel.buffer) > strlen(thread_array[next_thread_id].buffer)) {
+
+
+                    }
+                    else {
+                        next_thread_id = (next_thread_id + 1) % 100;
+                        continue;
+                    }
+                }
+            }
+
             searching = 0;
         }
         // Else we go to the next thread
@@ -293,25 +274,30 @@ void f() {
 }
 
 void function () {
-     for (int j = 0 ; j <= 30; j++) {
+     for (int j = 0 ; j <= 20; j++) {
          f();
-         mutex_lock(3);
          printf("Thread %d waiting for lock %d\n", ult_self(), 3);
+         mutex_lock(3);
          int wait = 0;
          for(long i = 0; i <= 1000000; i++) {
              wait++;
          }
          f();
-         printf("Thread %d unlocking %d\n", ult_self(), 3);
-         mutex_unlock(3);
+         f();
 
-         mutex_lock(7);
+         mutex_unlock(3);
+         printf("Thread %d unlocking %d\n", ult_self(), 3);
+
          printf("Thread %d waiting for lock %d\n", ult_self(), 7);
+         mutex_lock(7);
          for(int i = 0; i <= 10000; i++) {
              wait++;
          }
-         printf("Thread %d unlocking %d\n", ult_self(), 7);
+         f();
+         f();
+
          mutex_unlock(7);
+         printf("Thread %d unlocking %d\n", ult_self(), 7);
     }
 }
 void test_barrier() {
@@ -437,7 +423,7 @@ void channel_write(char* buffer, int size) {
         thread_array[current_thread_id].channel_wait_type = 1;
         strcpy(thread_array[current_thread_id].buffer, buffer);
         thread_array[current_thread_id].length_of_buffer = size;
-        mutex_lock(channel.id);
+        scheduler();
     }
 }
 
@@ -446,7 +432,7 @@ void channel_read(int length) {
         thread_array[current_thread_id].wait_for_channel = channel.id;
         thread_array[current_thread_id].channel_wait_type = 0;
         thread_array[current_thread_id].length_of_buffer = length;
-        // mutex_lock(channel.id);
+        scheduler();
     }
 }
 
@@ -505,11 +491,13 @@ void f1() {
     f();
     mutex_lock(2);
     f();
+
     f();
+    mutex_lock(5);
     mutex_unlock(2);
     f();
     f();
-    mutex_lock(5);
+
     f();
     f();
     mutex_unlock(5);
@@ -521,10 +509,11 @@ void f2() {
     mutex_lock(5);
     f();
     f();
+    mutex_lock(2);
     mutex_unlock(5);
     f();
     f();
-    mutex_lock(2);
+
     f();
     f();
     mutex_unlock(2);
@@ -547,7 +536,7 @@ void test_mutex_deadlock() {
 int main(void) {
 
     // test_barriers();
-    // test_mutex();
-    // test_mutex_deadlock();
+    //  test_mutex();
+    test_mutex_deadlock();
     return 0;
 }
