@@ -11,16 +11,8 @@ ult thread_array[102];
 mutex mutex_array[100];
 barrier barriers[20];
 ult_channel channel;
-
-int mutex_id_1;
-int mutex_id_2;
-
-void start_deadlock() {
-    setitimer(ITIMER_REAL, &timer_deadlock, NULL);
-}
-void stop_deadlock() {
-    setitimer(ITIMER_REAL, 0, 0);
-}
+ult_reads channel_reads[100];
+ult_writes channel_writes[100];
 
 void start() {
     setitimer(ITIMER_VIRTUAL, &timer, NULL);
@@ -48,11 +40,18 @@ void init_array() {
         thread_array[i].at_barrier = -1;
         thread_array[i].wait_for_channel = -1;
         thread_array[i].channel_wait_type = -1;
+
+
+        channel_reads[i].thread_id = -1;
+        channel_reads[i].size = 0;
+
+        channel_writes[i].thread_id = -1;
+        channel_writes[i].size = 0;
     }
     for(int i = 0; i < 20; i++) {
         barriers[i].capacity = -1;
     }
-    channel.length = -1;
+    channel.length = 0;
 }
 
 void deadlock_detector() {
@@ -71,16 +70,15 @@ void deadlock_detector() {
 
 
 
-        int wants_to_lock_mutex = thread_array[current_thread_id].wants_mutex_lock_id;
-        int mutex_locked_by_thread = -1;
-        for (int j = 0; j < 20 && mutex_locked_by_thread == -1; j++) {
-            if (mutex_array[j].locked_by == current_thread_id) {
-                mutex_locked_by_thread = mutex_array[j].id;
-            }
+    int wants_to_lock_mutex = thread_array[current_thread_id].wants_mutex_lock_id;
+    int mutex_locked_by_thread = -1;
+    for (int j = 0; j < 20 && mutex_locked_by_thread == -1; j++) {
+        if (mutex_array[j].locked_by == current_thread_id) {
+            mutex_locked_by_thread = mutex_array[j].id;
         }
-        printf("Current thread %d has lock %d\n", current_thread_id, mutex_locked_by_thread);
-        // Detect if there is a deadlock for the mutex
-        if (wants_to_lock_mutex != -1 && mutex_locked_by_thread != -1) {
+    }
+    // Detect if there is a deadlock for the mutex (simple circular e.g thread waits for thread and that one waits for this one)
+    if (wants_to_lock_mutex != -1 && mutex_locked_by_thread != -1) {
             int mutex_locked_by = mutex_array[wants_to_lock_mutex].locked_by;
             if (mutex_locked_by != -1 && thread_array[mutex_locked_by].status == 0) {
                 if(thread_array[mutex_locked_by].wants_mutex_lock_id == mutex_locked_by_thread) {
@@ -100,6 +98,45 @@ void deadlock_detector() {
                 }
             }
         }
+
+
+
+}
+
+void channel_deadlock_detection() {
+
+    int all_reads_0 = 1;
+    int all_writes_0 = 1;
+    int sum_writes = 0;
+    int sum_reads = 0;
+    for (int i = 1; i < 100; i++) {
+        if (channel_reads[i].thread_id != -1) {
+            sum_reads = sum_reads + channel_reads[i].size;
+            if (channel_reads[i].size != 0) {
+                all_reads_0 = 0;
+            }
+        }
+
+        if (channel_writes[i].thread_id != -1) {
+            sum_writes = sum_writes + channel_writes[i].size;
+            if (channel_writes[i].size != 0) {
+                all_writes_0 = 0;
+            }
+        }
+    }
+    /*printf("sum_Writes %d\n", sum_writes);
+    printf("sum_reads %d\n", sum_reads);
+    printf("all_reads_0 %d\n", all_reads_0);*/
+    if (((sum_writes + channel.length) > channel.capacity)) {
+        printf("Channel deadlock write\n");
+        exit(1);
+    }
+
+    if (sum_reads - sum_writes > channel.length) {
+        printf("Channel deadlock read\n");
+        exit(1);
+    }
+
 }
 
 void scheduler() {
@@ -215,11 +252,24 @@ void scheduler() {
                 // If the next thread wants to read from a channel
                 if (thread_array[next_thread_id].channel_wait_type == 0) {
                     // If the length of what was written is greater then the
-                    if (strlen(channel.buffer) > strlen(thread_array[next_thread_id].buffer)) {
+                    if (channel.length >= thread_array[next_thread_id].length_of_buffer) {
 
+                        // printf("Channel buffer is %s", channel.buffer);
 
+                        // Read from the channel and remove what is read
+                        copy_and_remove(channel.buffer, thread_array[next_thread_id].buffer, thread_array[next_thread_id].length_of_buffer);
+
+                        // printf("Channel buffer after read is %s", channel.buffer);
+
+                        channel.length = channel.length - thread_array[next_thread_id].length_of_buffer;
+
+                        thread_array[next_thread_id].wait_for_channel = -1;
+                        thread_array[next_thread_id].channel_wait_type = -1;
+
+                        channel_reads[next_thread_id].size = 0;
                     }
                     else {
+                        channel_deadlock_detection();
                         next_thread_id = (next_thread_id + 1) % 100;
                         continue;
                     }
@@ -228,11 +278,17 @@ void scheduler() {
 
                 // If the thread wants to write to the channel.
                 if (thread_array[next_thread_id].channel_wait_type == 1) {
-                    if (strlen(channel.buffer) > strlen(thread_array[next_thread_id].buffer)) {
+                    if (channel.length + thread_array[next_thread_id].length_of_buffer <= channel.capacity) {
+                        strcat(channel.buffer, thread_array[next_thread_id].buffer);
+                        channel.length = channel.length + thread_array[next_thread_id].length_of_buffer;
 
+                        thread_array[next_thread_id].wait_for_channel = -1;
+                        thread_array[next_thread_id].channel_wait_type = -1;
 
+                        channel_writes[next_thread_id].size = 0;
                     }
                     else {
+                        channel_deadlock_detection();
                         next_thread_id = (next_thread_id + 1) % 100;
                         continue;
                     }
@@ -260,57 +316,13 @@ void scheduler() {
 int ult_self() {
     return current_thread_id;
 }
+char* ult_buffer() {
+    return thread_array[current_thread_id].buffer;
+}
 
 void ult_exit() {
     thread_array[current_thread_id].status = 1;
     scheduler();
-}
-
-void f() {
-    int x = 0;
-    for(long i = 0; i < 1000000; ++i) {
-        x = x + 1;
-    }
-}
-
-void function () {
-     for (int j = 0 ; j <= 20; j++) {
-         f();
-         printf("Thread %d waiting for lock %d\n", ult_self(), 3);
-         mutex_lock(3);
-         int wait = 0;
-         for(long i = 0; i <= 1000000; i++) {
-             wait++;
-         }
-         f();
-         f();
-
-         mutex_unlock(3);
-         printf("Thread %d unlocking %d\n", ult_self(), 3);
-
-         printf("Thread %d waiting for lock %d\n", ult_self(), 7);
-         mutex_lock(7);
-         for(int i = 0; i <= 10000; i++) {
-             wait++;
-         }
-         f();
-         f();
-
-         mutex_unlock(7);
-         printf("Thread %d unlocking %d\n", ult_self(), 7);
-    }
-}
-void test_barrier() {
-    printf("Thread %d is waiting at barrier\n", ult_self());
-    for (int j = 0 ; j <= 400; j++) {
-        f();
-        int wait = 0;
-        for(long i = 0; i <= 1000000; i++) {
-            wait++;
-        }
-    }
-    barrier_wait(8);
-    printf("Thread %d after the barrier is down\n", ult_self());
 }
 
 
@@ -331,6 +343,10 @@ int ult_create(int created_id, void function(void*), void* arg) {
     thread_array[created_id].end_ctx.uc_stack.ss_size = SIGSTKSZ;
     makecontext(&(thread_array[created_id].end_ctx), ult_exit, 0);
     thread_array[created_id].ctx.uc_link = &thread_array[created_id].end_ctx;
+
+    // Registering the thread for either write or read on the channel
+    channel_reads[created_id].thread_id = created_id;
+    channel_writes[created_id].thread_id = created_id;
 
     // Creating the context for the current thread;
     makecontext(&(thread_array[created_id].ctx), (void (*)(void)) function, 1, arg);
@@ -358,13 +374,12 @@ void ult_init (long period) {
     timer.it_interval.tv_sec = 0;
     timer.it_interval.tv_usec = 1;
 
-    // signal(SIGALRM, deadlock_detector);
+    /*// signal(SIGALRM, deadlock_detector);
     timer_deadlock.it_value.tv_sec = 0;
     timer_deadlock.it_value.tv_usec = 900000;
     timer_deadlock.it_interval.tv_usec = 0;
-    timer_deadlock.it_interval.tv_usec = 900000;
+    timer_deadlock.it_interval.tv_usec = 900000;*/
 
-    // start_deadlock();
     start();
 }
 
@@ -397,6 +412,10 @@ int mutex_unlock(int mutex_id) {
     else return -1;
 }
 
+void barrier_create(int id) {
+    barriers[id].capacity = -1;
+}
+
 void barrier_init(int barrier_id, int capacity) {
     barriers[barrier_id].id = barrier_id;
     barriers[barrier_id].capacity = capacity;
@@ -412,37 +431,86 @@ int barrier_wait(int barrier_id) {
 
 void channel_init(int length) {
     channel.id = 1;
-    channel.length = length;
-    channel.buffer = malloc(length * sizeof(char));
-    mutex_init(channel.id);
+    // channel.length = length;
+    channel.capacity = length;
+    // mutex_init(channel.id);
 }
 
 void channel_write(char* buffer, int size) {
     if (channel.length != -1) {
         thread_array[current_thread_id].wait_for_channel = channel.id;
         thread_array[current_thread_id].channel_wait_type = 1;
+        thread_array[current_thread_id].buffer = malloc(size * sizeof(char));
         strcpy(thread_array[current_thread_id].buffer, buffer);
         thread_array[current_thread_id].length_of_buffer = size;
+        channel_writes[current_thread_id].size = size;
         scheduler();
     }
 }
 
 void channel_read(int length) {
+    thread_array[current_thread_id].buffer = NULL;
     if (channel.length != -1) {
         thread_array[current_thread_id].wait_for_channel = channel.id;
         thread_array[current_thread_id].channel_wait_type = 0;
         thread_array[current_thread_id].length_of_buffer = length;
+        thread_array[current_thread_id].buffer = malloc(length * sizeof(char));
+        channel_reads[current_thread_id].size = length;
         scheduler();
     }
 }
+
+void copy_and_remove(char* source, char* dest, int length) {
+    strncpy(dest, source, length);
+    dest[length] = '\0';
+
+    size_t len = strlen(source);
+    memmove(source, source + length, len - length + 1);
+}
+
+void f() {
+    int x = 0;
+    for(long i = 0; i < 1000000; ++i) {
+        x = x + 1;
+    }
+}
+// Mutex thread function
+void function () {
+    for (int j = 0 ; j <= 5; j++) {
+        f();
+        printf("Thread %d waiting for lock %d\n", ult_self(), 3);
+        mutex_lock(3);
+        int wait = 0;
+        for(long i = 0; i <= 1000000; i++) {
+            wait++;
+        }
+        f();
+        f();
+
+        mutex_unlock(3);
+        printf("Thread %d unlocking %d\n", ult_self(), 3);
+
+        printf("Thread %d waiting for lock %d\n", ult_self(), 7);
+        mutex_lock(7);
+        for(int i = 0; i <= 10000; i++) {
+            wait++;
+        }
+        f();
+        f();
+
+        mutex_unlock(7);
+        printf("Thread %d unlocking %d\n", ult_self(), 7);
+    }
+}
+
 
 void test_mutex() {
     int threads[50];
     for (int i = 1; i < 10; i++) {
         threads[i] = i;
     }
-    mutex_id_1 = 3;
-    mutex_id_2 = 7;
+    int mutex_id_1 = 3;
+    int mutex_id_2 = 7;
     mutex_init(mutex_id_1);
     mutex_init(mutex_id_2);
     ult_init(10);
@@ -455,37 +523,8 @@ void test_mutex() {
     }
 }
 
-void test_barriers() {
-    int threads[50];
-    for (int i = 1; i < 10; i++) {
-        threads[i] = i;
-    }
-    ult_init(10);
-    barrier_init(8, 20);
 
-    for(int i = 1; i < 10; i++) {
-        ult_create(threads[i], test_barrier, NULL);
-    }
-    for(int i = 1; i < 10; i++) {
-        ult_join(threads[i]);
-    }
-    barriers[8].capacity = -1;
-}
-
-void test_channel() {
-    int threads[50];
-    for (int i = 1; i < 10; i++) {
-        threads[i] = i;
-    }
-    channel_init(20);
-    for(int i = 1; i < 10; i++) {
-        ult_create(threads[i], function, NULL);
-    }
-    for(int i = 1; i < 10; i++) {
-        ult_join(threads[i]);
-    }
-}
-
+// Mutex deadlock testing functions;
 void f1() {
     f();
     f();
@@ -519,6 +558,8 @@ void f2() {
     mutex_unlock(2);
 }
 
+
+// Mutex deadlock thread function
 void test_mutex_deadlock() {
     int mutex_id1 = 2;
     int mutex_id2 = 5;
@@ -533,10 +574,173 @@ void test_mutex_deadlock() {
     ult_join(2);
 }
 
-int main(void) {
 
+void test_barrier() {
+    printf("Thread %d is waiting at barrier\n", ult_self());
+    for (int j = 0 ; j <= 400; j++) {
+        f();
+        int wait = 0;
+        for(long i = 0; i <= 1000000; i++) {
+            wait++;
+        }
+    }
+    barrier_wait(8);
+    printf("Thread %d after the barrier is down\n", ult_self());
+}
+
+
+void test_barriers() {
+    int threads[50];
+    for (int i = 1; i < 10; i++) {
+        threads[i] = i;
+    }
+    ult_init(10);
+    barrier_init(8, 20);
+
+    for(int i = 1; i < 10; i++) {
+        ult_create(threads[i], test_barrier, NULL);
+    }
+    for(int i = 1; i < 10; i++) {
+        ult_join(threads[i]);
+    }
+    barrier_create(8);
+}
+
+void channel_thread_function_t1() {
+    f();
+    f();
+    char to_write[4] = "abc";
+    channel_write(to_write, 3);
+    printf("Thread %d wrote %s to channel\n", ult_self(), ult_buffer());
+    f();
+
+    char to_write2[3] = "ab";
+    channel_write(to_write2, 2);
+    printf("Thread %d wrote %s to channel\n", ult_self(), ult_buffer());
+
+}
+void channel_thread_function_t2() {
+    f();
+    f();
+    char to_write[3] = "cb";
+    channel_write(to_write, 2);
+    printf("Thread %d wrote %s to channel\n", ult_self(), ult_buffer());
+    f();
+
+    f();
+}
+void channel_thread_function_t3() {
+    channel_read(3);
+    printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
+}
+void channel_thread_function_t4() {
+    channel_read(3);
+    printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
+}
+
+
+void test_channel() {
+    int threads[50];
+    for (int i = 1; i < 10; i++) {
+        threads[i] = i;
+    }
+    ult_init(10);
+    channel_init(20);
+    ult_create(1,channel_thread_function_t1, NULL);
+    ult_create(2,channel_thread_function_t2, NULL);
+    ult_create(3,channel_thread_function_t3, NULL);
+    ult_create(4,channel_thread_function_t4, NULL);
+
+    ult_join(1);
+    ult_join(2);
+
+}
+
+
+void channel_deadlock_write_thread_function_t1() {
+    char to_write2[3] = "abc";
+    channel_write(to_write2, 3);
+    printf("Thread %d wrote value %s to channel\n", ult_self(), ult_buffer());
+
+    // channel_read(2);
+    printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
+}
+void channel_deadlock_write_thread_function_t2() {
+    char to_write2[3] = "ab";
+    channel_write(to_write2, 2);
+    printf("Thread %d wrote value %s from channel\n", ult_self(), ult_buffer());
+}
+void channel_deadlock_write_thread_function_t3() {
+    char to_write2[3] = "ab";
+    channel_write(to_write2, 2);
+    printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
+}
+void channel_deadlock_write_thread_function_t4() {
+    channel_read(1);
+    printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
+}
+
+void channel_deadlock_read_thread_function_t1() {
+    char to_write2[3] = "abc";
+    channel_write(to_write2, 3);
+    printf("Thread %d wrote value %s to channel\n", ult_self(), ult_buffer());
+
+    // channel_read(2);
+    printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
+}
+void channel_deadlock_read_thread_function_t2() {
+    char to_write2[3] = "ab";
+    channel_write(to_write2, 2);
+    printf("Thread %d wrote value %s from channel\n", ult_self(), ult_buffer());
+}
+void channel_deadlock_read_thread_function_t3() {
+    channel_read(2);
+    printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
+}
+void channel_deadlock_read_thread_function_t4() {
+    channel_read(4);
+    printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
+}
+
+void test_channel_deadlock_write() {
+    int threads[50];
+    for (int i = 1; i < 10; i++) {
+        threads[i] = i;
+    }
+    ult_init(10);
+    channel_init(5);
+    ult_create(1,channel_deadlock_write_thread_function_t1, NULL);
+    ult_create(2,channel_deadlock_write_thread_function_t2, NULL);
+    ult_create(3,channel_deadlock_write_thread_function_t3, NULL);
+    ult_create(4,channel_deadlock_write_thread_function_t4, NULL);
+    ult_join(1);
+    ult_join(2);
+    ult_join(3);
+    ult_join(4);
+}
+
+void test_channel_deadlock_read() {
+    int threads[50];
+    for (int i = 1; i < 10; i++) {
+        threads[i] = i;
+    }
+    ult_init(10);
+    channel_init(5);
+    ult_create(1,channel_deadlock_read_thread_function_t1, NULL);
+    ult_create(2,channel_deadlock_read_thread_function_t2, NULL);
+    ult_create(3,channel_deadlock_read_thread_function_t3, NULL);
+    ult_create(4,channel_deadlock_read_thread_function_t4, NULL);
+    ult_join(1);
+    ult_join(2);
+    ult_join(3);
+    ult_join(4);
+}
+int main(void) {
     // test_barriers();
-    //  test_mutex();
-    test_mutex_deadlock();
+    // test_mutex();
+    // test_mutex_deadlock();
+    // test_channel();
+    test_channel_deadlock_write();
+    // test_channel_deadlock_read();
     return 0;
 }

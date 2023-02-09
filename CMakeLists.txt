@@ -3,4 +3,4 @@ project(UserLevelThreads C)
 
 set(CMAKE_C_STANDARD 11)
 
-add_library(UserLevelThreads library.c)
+add_library(UserLevelThreads library.c main.c)

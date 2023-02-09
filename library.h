@@ -45,9 +45,21 @@ typedef struct {
 
 typedef struct {
     int id; //
-    char* buffer; // the message
+    char buffer[100]; // the message
     int length; // length of the message;  if not created then is -1
+    int capacity;
 } ult_channel;
+
+
+typedef struct {
+    int thread_id;
+    int size;// -1 if not registered for a read // number of bytes to read ;
+} ult_reads;
+
+typedef struct {
+    int thread_id;
+    int size;// -1 if not registered for a write // number of bytes to write ;
+} ult_writes;
 
 void start();
 void stop();
@@ -61,6 +73,7 @@ int ult_self(void);
 void ult_init(long period);
 int ult_create(int created_id, void (*function)(void*), void* arg);
 void ult_join(int thread_to_wait_for_id);
+char* ult_buffer();
 void ult_exit();
 
 
@@ -68,12 +81,15 @@ void mutex_init(int mutex_id);
 int mutex_lock(int mutex_id);
 int mutex_unlock(int mutex_id);
 
+void barrier_create(int id);
 void barrier_init(int barrier_id, int capacity);
 int barrier_wait(int barrier_id);
 
 void channel_init(int length);
 void channel_write(char* buffer, int length);
 void channel_read(int length);
+void copy_and_remove(char* source, char* destination, int length);
+
 
 void function();
 #endif //USERLEVELTHREADS_LIBRARY_H
