@@ -88,6 +88,8 @@ int barrier_wait(int barrier_id);
 void channel_init(int length);
 void channel_write(char* buffer, int length);
 void channel_read(int length);
+void channel_end_read();
+void channel_end_write();
 void copy_and_remove(char* source, char* destination, int length);
 
 

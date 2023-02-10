@@ -270,7 +270,7 @@ void scheduler() {
                         thread_array[next_thread_id].wait_for_channel = -1;
                         thread_array[next_thread_id].channel_wait_type = -1;
 
-                        channel_reads[next_thread_id].size = 0;
+                        channel_reads[next_thread_id].size = -1;
                     }
                     else {
                         channel_deadlock_detection();
@@ -291,7 +291,7 @@ void scheduler() {
                         //thread_array[next_thread_id].buffer = NULL;
                         //thread_array[next_thread_id].length_of_buffer = 0;
 
-                        channel_writes[next_thread_id].size = 0;
+                        channel_writes[next_thread_id].size = -1;
                     }
                     else {
                         channel_deadlock_detection();
@@ -467,6 +467,14 @@ void channel_read(int length) {
     }
 }
 
+void channel_end_read() {
+    channel_reads[current_thread_id].size = 0;
+}
+
+void channel_end_write() {
+    channel_writes[current_thread_id].size = 0;
+}
+
 void copy_and_remove(char* source, char* dest, int length) {
     strncpy(dest, source, length);
     dest[length] = '\0';
@@ -483,7 +491,7 @@ void f() {
 }
 // Mutex thread function
 void function () {
-    for (int j = 0 ; j <= 5; j++) {
+
         f();
         printf("Thread %d waiting for lock %d\n", ult_self(), 3);
         mutex_lock(3);
@@ -507,7 +515,6 @@ void function () {
 
         mutex_unlock(7);
         printf("Thread %d unlocking %d\n", ult_self(), 7);
-    }
 }
 
 
@@ -624,6 +631,7 @@ void channel_thread_function_t1() {
     char to_write2[3] = "ab";
     channel_write(to_write2, 2);
     printf("Thread %d wrote %s to channel\n", ult_self(), ult_buffer());
+    channel_end_write();
 
 }
 void channel_thread_function_t2() {
@@ -635,14 +643,17 @@ void channel_thread_function_t2() {
     f();
 
     f();
+    channel_end_write();
 }
 void channel_thread_function_t3() {
     channel_read(3);
     printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
+    channel_end_read();
 }
 void channel_thread_function_t4() {
     channel_read(3);
     printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
+    channel_end_read();
 }
 
 
@@ -669,23 +680,27 @@ void channel_deadlock_write_thread_function_t1() {
     char to_write2[3] = "abc";
     channel_write(to_write2, 3);
     printf("Thread %d wrote value %s to channel\n", ult_self(), ult_buffer());
-
+    channel_end_write();
     // channel_read(2);
-    printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
+    //printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
 }
 void channel_deadlock_write_thread_function_t2() {
     char to_write2[3] = "ab";
     channel_write(to_write2, 2);
     printf("Thread %d wrote value %s from channel\n", ult_self(), ult_buffer());
+    channel_end_write();
 }
 void channel_deadlock_write_thread_function_t3() {
     char to_write2[3] = "ab";
     channel_write(to_write2, 2);
     printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
+    channel_end_write();
 }
 void channel_deadlock_write_thread_function_t4() {
     channel_read(1);
     printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
+    channel_end_read();
+
 }
 
 void channel_deadlock_read_thread_function_t1() {
@@ -693,24 +708,29 @@ void channel_deadlock_read_thread_function_t1() {
     channel_write(to_write2, 3);
     printf("Thread %d wrote value %s to channel\n", ult_self(), ult_buffer());
 
-    // channel_read(2);
-    // printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
-    char to_write[2] = "ab";
+    // uncomment to resolve deadlock;
+    /*char to_write[2] = "ab";
     channel_write(to_write, 2);
-    printf("Thread %d wrote value %s to channel\n", ult_self(), ult_buffer());
+    printf("Thread %d wrote value %s to channel\n", ult_self(), ult_buffer());*/
+    channel_end_write();
 }
 void channel_deadlock_read_thread_function_t2() {
     char to_write2[2] = "ab";
     channel_write(to_write2, 2);
     printf("Thread %d wrote value %s from channel\n", ult_self(), ult_buffer());
+    channel_end_write();
+
 }
 void channel_deadlock_read_thread_function_t3() {
     channel_read(2);
     printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
+    channel_end_read();
+
 }
 void channel_deadlock_read_thread_function_t4() {
-    channel_read(7);
+    channel_read(4);
     printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
+    channel_end_read();
 }
 
 void test_channel_deadlock_write() {
@@ -752,6 +772,6 @@ int main(void) {
     // test_mutex_deadlock();
     // test_channel();
     // test_channel_deadlock_write();
-    test_channel_deadlock_read();
+    // test_channel_deadlock_read();
     return 0;
 }
