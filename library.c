@@ -43,10 +43,10 @@ void init_array() {
 
 
         channel_reads[i].thread_id = -1;
-        channel_reads[i].size = 0;
+        channel_reads[i].size = -1;
 
         channel_writes[i].thread_id = -1;
-        channel_writes[i].size = 0;
+        channel_writes[i].size = -1;
     }
     for(int i = 0; i < 20; i++) {
         barriers[i].capacity = -1;
@@ -112,28 +112,32 @@ void channel_deadlock_detection() {
     for (int i = 1; i < 100; i++) {
         if (channel_reads[i].thread_id != -1) {
             sum_reads = sum_reads + channel_reads[i].size;
-            if (channel_reads[i].size != 0) {
-                all_reads_0 = 0;
+            if (channel_reads[i].size == -1 && channel_writes[i].size == -1) {
+                printf("Thread %d has not yet decided read\n", channel_reads[i].thread_id);
+                // all_reads_0 = 0;
+                return;
             }
         }
 
         if (channel_writes[i].thread_id != -1) {
             sum_writes = sum_writes + channel_writes[i].size;
-            if (channel_writes[i].size != 0) {
+            if (channel_reads[i].size == -1 && channel_writes[i].size == -1) {
                 all_writes_0 = 0;
+                printf("Thread %d has not yet decided write\n", channel_reads[i].thread_id);
+                return;
             }
         }
     }
-    /*printf("sum_Writes %d\n", sum_writes);
-    printf("sum_reads %d\n", sum_reads);
-    printf("all_reads_0 %d\n", all_reads_0);*/
+
     if (((sum_writes + channel.length) > channel.capacity)) {
         printf("Channel deadlock write\n");
+        print_array();
         exit(1);
     }
 
     if (sum_reads - sum_writes > channel.length) {
         printf("Channel deadlock read\n");
+        print_array();
         exit(1);
     }
 
@@ -284,6 +288,8 @@ void scheduler() {
 
                         thread_array[next_thread_id].wait_for_channel = -1;
                         thread_array[next_thread_id].channel_wait_type = -1;
+                        //thread_array[next_thread_id].buffer = NULL;
+                        //thread_array[next_thread_id].length_of_buffer = 0;
 
                         channel_writes[next_thread_id].size = 0;
                     }
@@ -431,17 +437,18 @@ int barrier_wait(int barrier_id) {
 
 void channel_init(int length) {
     channel.id = 1;
-    // channel.length = length;
+    channel.length = 0;
     channel.capacity = length;
     // mutex_init(channel.id);
 }
 
 void channel_write(char* buffer, int size) {
+    thread_array[current_thread_id].buffer = NULL;
     if (channel.length != -1) {
         thread_array[current_thread_id].wait_for_channel = channel.id;
         thread_array[current_thread_id].channel_wait_type = 1;
         thread_array[current_thread_id].buffer = malloc(size * sizeof(char));
-        strcpy(thread_array[current_thread_id].buffer, buffer);
+        strncpy(thread_array[current_thread_id].buffer, buffer, size);
         thread_array[current_thread_id].length_of_buffer = size;
         channel_writes[current_thread_id].size = size;
         scheduler();
@@ -653,7 +660,8 @@ void test_channel() {
 
     ult_join(1);
     ult_join(2);
-
+    ult_join(3);
+    ult_join(4);
 }
 
 
@@ -686,10 +694,13 @@ void channel_deadlock_read_thread_function_t1() {
     printf("Thread %d wrote value %s to channel\n", ult_self(), ult_buffer());
 
     // channel_read(2);
-    printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
+    // printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
+    char to_write[2] = "ab";
+    channel_write(to_write, 2);
+    printf("Thread %d wrote value %s to channel\n", ult_self(), ult_buffer());
 }
 void channel_deadlock_read_thread_function_t2() {
-    char to_write2[3] = "ab";
+    char to_write2[2] = "ab";
     channel_write(to_write2, 2);
     printf("Thread %d wrote value %s from channel\n", ult_self(), ult_buffer());
 }
@@ -698,7 +709,7 @@ void channel_deadlock_read_thread_function_t3() {
     printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
 }
 void channel_deadlock_read_thread_function_t4() {
-    channel_read(4);
+    channel_read(7);
     printf("Thread %d read value %s from channel\n", ult_self(), ult_buffer());
 }
 
@@ -740,7 +751,7 @@ int main(void) {
     // test_mutex();
     // test_mutex_deadlock();
     // test_channel();
-    test_channel_deadlock_write();
-    // test_channel_deadlock_read();
+    // test_channel_deadlock_write();
+    test_channel_deadlock_read();
     return 0;
 }
